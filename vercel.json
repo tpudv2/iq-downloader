@@ -3,8 +3,9 @@
     "api/fetch.js": { "maxDuration": 30 },
     "api/download.js": { "maxDuration": 30 }
   },
-  "rewrites": [
-    { "source": "/api/fetch", "destination": "/api/fetch" },
-    { "source": "/api/download", "destination": "/api/download" }
+  "routes": [
+    { "src": "/api/fetch", "dest": "/api/fetch.js" },
+    { "src": "/api/download", "dest": "/api/download.js" },
+    { "src": "/(.*)", "dest": "/$1" }
   ]
 }
