@@ -2,7 +2,5 @@
   "name": "iq-downloader",
   "version": "1.0.0",
   "private": true,
-  "dependencies": {
-    "yt-dlp-exec": "^1.0.2"
-  }
+  "dependencies": {}
 }
