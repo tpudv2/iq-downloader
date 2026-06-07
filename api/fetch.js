@@ -1,18 +1,28 @@
 const IG_URL_RE = /instagram\.com\/(p|reel|reels|tv)\/([a-z0-9_\-]+)/i;
 
+// Cookie string from INSTAGRAM_COOKIES env var (set in Vercel dashboard)
+function getCookieHeader() {
+  return process.env.INSTAGRAM_COOKIES || '';
+}
+
 // Browser-like headers to avoid bot detection
-const BROWSER_HEADERS = {
-  'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
-  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-  'Accept-Language': 'en-US,en;q=0.9',
-  'Accept-Encoding': 'identity',
-  'Connection': 'keep-alive',
-  'Upgrade-Insecure-Requests': '1',
-  'Sec-Fetch-Dest': 'document',
-  'Sec-Fetch-Mode': 'navigate',
-  'Sec-Fetch-Site': 'none',
-  'Cache-Control': 'max-age=0',
-};
+function getBrowserHeaders() {
+  const cookies = getCookieHeader();
+  const h = {
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'identity',
+    'Connection': 'keep-alive',
+    'Upgrade-Insecure-Requests': '1',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Cache-Control': 'max-age=0',
+  };
+  if (cookies) h['Cookie'] = cookies;
+  return h;
+}
 
 function formatDuration(seconds) {
   const m = Math.floor(seconds / 60);
@@ -28,7 +38,7 @@ function decodeEntities(s) {
 async function fetchViaJsonApi(shortcode) {
   const url = `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`;
   const res = await fetch(url, {
-    headers: { ...BROWSER_HEADERS, 'X-Requested-With': 'XMLHttpRequest' },
+    headers: { ...getBrowserHeaders(), 'X-Requested-With': 'XMLHttpRequest' },
     redirect: 'follow',
   });
   if (!res.ok) throw new Error(`json_api ${res.status}`);
@@ -43,7 +53,7 @@ async function fetchViaJsonApi(shortcode) {
 // ── Method 2: GraphQL endpoint ───────────────────────────────────────────────
 async function fetchViaGraphQL(shortcode) {
   const url = `https://www.instagram.com/graphql/query/?query_hash=2b0673e0dc4580674a88d426fe00ea90&variables=${encodeURIComponent(JSON.stringify({ shortcode }))}`;
-  const res = await fetch(url, { headers: BROWSER_HEADERS, redirect: 'follow' });
+  const res = await fetch(url, { headers: getBrowserHeaders(), redirect: 'follow' });
   if (!res.ok) throw new Error(`graphql ${res.status}`);
   const json = await res.json();
   const media = json?.data?.shortcode_media;
@@ -54,7 +64,7 @@ async function fetchViaGraphQL(shortcode) {
 // ── Method 3: Embed page HTML scraping ──────────────────────────────────────
 async function fetchViaEmbed(shortcode) {
   const url = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
-  const res = await fetch(url, { headers: BROWSER_HEADERS, redirect: 'follow' });
+  const res = await fetch(url, { headers: getBrowserHeaders(), redirect: 'follow' });
   if (res.status === 404) throw Object.assign(new Error('not found'), { kind: 'invalid' });
   if (!res.ok) throw new Error(`embed ${res.status}`);
   const html = await res.text();
