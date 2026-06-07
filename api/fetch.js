@@ -1,13 +1,19 @@
 const IG_URL_RE = /instagram\.com\/(p|reel|reels|tv)\/([a-z0-9_\-]+)/i;
 
-// Cookie string from INSTAGRAM_COOKIES env var (set in Vercel dashboard)
-function getCookieHeader() {
-  return process.env.INSTAGRAM_COOKIES || '';
+// Build the cookie string: user's sessionId takes priority, falls back to server env var
+function buildCookies(sessionId) {
+  const serverCookies = process.env.INSTAGRAM_COOKIES || '';
+  if (sessionId) {
+    // Inject/replace sessionid in the server cookie string if present, otherwise prepend
+    const base = serverCookies.replace(/\bsessionid=[^;]*(;\s*)?/g, '').trim().replace(/;$/, '');
+    return `sessionid=${sessionId}${base ? '; ' + base : ''}`;
+  }
+  return serverCookies;
 }
 
 // Browser-like headers to avoid bot detection
-function getBrowserHeaders() {
-  const cookies = getCookieHeader();
+function getBrowserHeaders(sessionId) {
+  const cookies = buildCookies(sessionId);
   const h = {
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Mobile/15E148 Safari/604.1',
     'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -24,6 +30,11 @@ function getBrowserHeaders() {
   return h;
 }
 
+// Curry headers with the sessionId for each scraping method
+function makeHeaders(sessionId, extra) {
+  return { ...getBrowserHeaders(sessionId), ...extra };
+}
+
 function formatDuration(seconds) {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
@@ -35,10 +46,10 @@ function decodeEntities(s) {
 }
 
 // ── Method 1: Instagram internal JSON API ────────────────────────────────────
-async function fetchViaJsonApi(shortcode) {
+async function fetchViaJsonApi(shortcode, sessionId) {
   const url = `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`;
   const res = await fetch(url, {
-    headers: { ...getBrowserHeaders(), 'X-Requested-With': 'XMLHttpRequest' },
+    headers: makeHeaders(sessionId, { 'X-Requested-With': 'XMLHttpRequest' }),
     redirect: 'follow',
   });
   if (!res.ok) throw new Error(`json_api ${res.status}`);
@@ -51,9 +62,9 @@ async function fetchViaJsonApi(shortcode) {
 }
 
 // ── Method 2: GraphQL endpoint ───────────────────────────────────────────────
-async function fetchViaGraphQL(shortcode) {
+async function fetchViaGraphQL(shortcode, sessionId) {
   const url = `https://www.instagram.com/graphql/query/?query_hash=2b0673e0dc4580674a88d426fe00ea90&variables=${encodeURIComponent(JSON.stringify({ shortcode }))}`;
-  const res = await fetch(url, { headers: getBrowserHeaders(), redirect: 'follow' });
+  const res = await fetch(url, { headers: makeHeaders(sessionId), redirect: 'follow' });
   if (!res.ok) throw new Error(`graphql ${res.status}`);
   const json = await res.json();
   const media = json?.data?.shortcode_media;
@@ -62,9 +73,9 @@ async function fetchViaGraphQL(shortcode) {
 }
 
 // ── Method 3: Embed page HTML scraping ──────────────────────────────────────
-async function fetchViaEmbed(shortcode) {
+async function fetchViaEmbed(shortcode, sessionId) {
   const url = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
-  const res = await fetch(url, { headers: getBrowserHeaders(), redirect: 'follow' });
+  const res = await fetch(url, { headers: makeHeaders(sessionId), redirect: 'follow' });
   if (res.status === 404) throw Object.assign(new Error('not found'), { kind: 'invalid' });
   if (!res.ok) throw new Error(`embed ${res.status}`);
   const html = await res.text();
@@ -179,16 +190,19 @@ module.exports = async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'method_not_allowed' });
 
-  const { url } = req.body || {};
+  const { url, sessionId } = req.body || {};
   const match = url && String(url).match(IG_URL_RE);
   if (!match) return res.status(200).json({ error: 'invalid' });
+
+  // Sanitize: only keep the sessionid value (alphanumeric + %)
+  const cleanSession = sessionId ? String(sessionId).replace(/[^a-zA-Z0-9%]/g, '').slice(0, 512) : '';
 
   const shortcode = match[2];
   const methods = [fetchViaJsonApi, fetchViaGraphQL, fetchViaEmbed];
 
   for (const method of methods) {
     try {
-      const { account, items } = await method(shortcode);
+      const { account, items } = await method(shortcode, cleanSession);
       const type = items.length > 1 ? 'carousel' : items[0].kind;
       return res.status(200).json({
         error: null,

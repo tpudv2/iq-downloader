@@ -1,6 +1,10 @@
 const { useState, useEffect, useRef, useCallback } = React;
 const S = window.STRINGS;
 
+const SESSION_KEY = "snaggr_ig_session";
+function getSession() { return localStorage.getItem(SESSION_KEY) || ""; }
+function saveSession(v) { if (v) localStorage.setItem(SESSION_KEY, v); else localStorage.removeItem(SESSION_KEY); }
+
 /* ───────────────────────── helpers ───────────────────────── */
 
 // deterministic hash from string (kept for avatar gradients)
@@ -20,11 +24,11 @@ function gradientFor(seed) {
   return { c1, c2, angle: (h % 4) * 45 + 25 };
 }
 
-async function fetchPost(url) {
+async function fetchPost(url, sessionId) {
   const res = await fetch("/api/fetch", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url }),
+    body: JSON.stringify({ url, sessionId }),
   });
   if (!res.ok) throw new Error("server_error");
   return res.json();
@@ -429,6 +433,79 @@ function SearchBar({ value, setValue, onSubmit, busy, t }) {
 
 /* ───────────────────────── app ───────────────────────── */
 
+/* ───────────────────────── session panel ───────────────────────── */
+
+function SessionPanel({ t, sessionId, onSave, onClose }) {
+  const [val, setVal] = useState(sessionId || "");
+  const [showHow, setShowHow] = useState(false);
+
+  return (
+    <div style={{
+      width: "100%", background: "var(--bg-2)", borderBottom: "1px solid var(--border)",
+      animation: "floatIn .3s var(--ease) both",
+    }}>
+      <div style={{ maxWidth: 680, margin: "0 auto", padding: "20px 28px 24px" }}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 14 }}>
+          <div>
+            <h3 style={{ margin: "0 0 4px", fontSize: 15, fontWeight: 700 }}>{t.sessionTitle}</h3>
+            <p style={{ margin: 0, fontSize: 13, color: "var(--muted)", lineHeight: 1.5 }}>{t.sessionDesc}</p>
+          </div>
+          <button onClick={onClose} style={{ border: "none", background: "transparent", cursor: "pointer", color: "var(--faint)", padding: 4, flexShrink: 0 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <input
+            value={val}
+            onChange={e => setVal(e.target.value)}
+            placeholder={t.sessionPlaceholder}
+            type="password"
+            style={{
+              flex: 1, border: "1px solid var(--border-2)", borderRadius: 10, padding: "9px 14px",
+              background: "var(--surface)", color: "var(--text)", fontSize: 14, fontFamily: "var(--mono)",
+              outline: "none",
+            }}
+          />
+          <button onClick={() => onSave(val.trim())} disabled={!val.trim()} style={{
+            border: "none", cursor: val.trim() ? "pointer" : "default", padding: "9px 18px",
+            borderRadius: 10, fontSize: 13.5, fontWeight: 600, color: "white", whiteSpace: "nowrap",
+            background: val.trim() ? "linear-gradient(145deg, var(--accent-bright), var(--accent-deep))" : "var(--surface-2)",
+            boxShadow: val.trim() ? "0 4px 14px var(--accent-glow)" : "none",
+          }}>{t.sessionSave}</button>
+          {sessionId && (
+            <button onClick={() => { onSave(""); setVal(""); }} style={{
+              border: "1px solid var(--border)", cursor: "pointer", padding: "9px 14px",
+              borderRadius: 10, fontSize: 13, fontWeight: 600, color: "var(--muted)", background: "transparent",
+            }}>{t.sessionDisconnect}</button>
+          )}
+        </div>
+
+        <button onClick={() => setShowHow(v => !v)} style={{
+          border: "none", background: "transparent", cursor: "pointer", padding: "8px 0 0",
+          color: "var(--accent-bright)", fontSize: 12.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 5,
+        }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+          {t.sessionHowTo}
+        </button>
+
+        {showHow && (
+          <div style={{
+            marginTop: 10, padding: "14px 16px", borderRadius: 10,
+            background: "var(--surface)", border: "1px solid var(--border)", fontSize: 13, lineHeight: 1.7, color: "var(--muted)",
+          }}>
+            <ol style={{ margin: 0, paddingLeft: 18 }}>
+              {t.sessionSteps.map((s, i) => <li key={i}>{s}</li>)}
+            </ol>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ───────────────────────── app ───────────────────────── */
+
 function App() {
   const [lang, setLang] = useState(() => sessionStorage.getItem("snaggr_lang") || (navigator.language?.startsWith("es") ? "es" : "en"));
   const [value, setValue] = useState("");
@@ -436,6 +513,8 @@ function App() {
   const [phase, setPhase] = useState("");
   const [result, setResult] = useState(null);
   const [recent, setRecent] = useState(loadRecent);
+  const [sessionId, setSessionId] = useState(getSession);
+  const [showSessionPanel, setShowSessionPanel] = useState(false);
   const timers = useRef([]);
   const t = S[lang];
 
@@ -454,7 +533,7 @@ function App() {
     timers.current.push(setTimeout(() => setPhase(t.fetching), 900));
 
     try {
-      const data = await fetchPost(url);
+      const data = await fetchPost(url, getSession());
       if (data.error) {
         setResult({ error: data.error, account: data.account });
         setStatus("error");
@@ -490,8 +569,33 @@ function App() {
     <div className="shell">
       <div style={{ width: "100%", maxWidth: 1320, padding: "20px 28px 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Logo />
-        <LangSwitch lang={lang} setLang={setLang} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button onClick={() => setShowSessionPanel(v => !v)} title={t.sessionBtn} style={{
+            display: "flex", alignItems: "center", gap: 6, border: "1px solid var(--border)",
+            borderRadius: 99, padding: "6px 13px", background: sessionId ? "var(--accent-faint)" : "var(--surface)",
+            cursor: "pointer", fontSize: 12.5, fontWeight: 600,
+            color: sessionId ? "var(--accent-bright)" : "var(--muted)",
+            transition: "all .2s var(--ease)",
+          }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              {sessionId
+                ? <><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/><path d="M9 12l2 2 4-4"/></>
+                : <><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></>}
+            </svg>
+            {sessionId ? t.sessionConnected : t.sessionConnect}
+          </button>
+          <LangSwitch lang={lang} setLang={setLang} />
+        </div>
       </div>
+
+      {showSessionPanel && (
+        <SessionPanel
+          t={t}
+          sessionId={sessionId}
+          onSave={(v) => { saveSession(v); setSessionId(v); setShowSessionPanel(false); }}
+          onClose={() => setShowSessionPanel(false)}
+        />
+      )}
 
       <div className="layout" style={{ marginTop: 8 }}>
         <div className="ad-rail"><AdSlot kind="sky" t={t} /></div>
