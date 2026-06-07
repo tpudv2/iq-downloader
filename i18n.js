@@ -27,6 +27,8 @@ const STRINGS = {
     invalidBody: "Paste a full URL — it should look like instagram.com/p/… or instagram.com/reel/…",
     emptyTitle: "No media found",
     emptyBody: "This post doesn't contain any downloadable photos or videos.",
+    fetchFailedTitle: "Couldn't fetch this post",
+    fetchFailedBody: "Instagram may be blocking the request. Make sure the post is public and try again in a few seconds.",
     tryAgain: "Try another link",
     // recent
     recentTitle: "Recent this session",
@@ -65,6 +67,8 @@ const STRINGS = {
     invalidBody: "Pega un URL completo — debe verse como instagram.com/p/… o instagram.com/reel/…",
     emptyTitle: "No se encontró contenido",
     emptyBody: "Esta publicación no contiene fotos ni videos descargables.",
+    fetchFailedTitle: "No se pudo obtener este post",
+    fetchFailedBody: "Instagram puede estar bloqueando la solicitud. Asegurate de que el post sea público e intentá de nuevo en unos segundos.",
     tryAgain: "Probar otro enlace",
     recentTitle: "Recientes de esta sesión",
     recentNote: "Se borran automáticamente al salir",

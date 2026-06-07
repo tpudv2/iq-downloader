@@ -235,7 +235,7 @@ function ErrorCard({ kind, t, onReset, account }) {
     private:     { title: t.privateTitle, body: t.privateBody, color: "var(--warn)", icon: "lock" },
     invalid:     { title: t.invalidTitle, body: t.invalidBody, color: "var(--danger)", icon: "alert" },
     empty:       { title: t.emptyTitle, body: t.emptyBody, color: "var(--faint)", icon: "empty" },
-    fetch_failed:{ title: t.invalidTitle, body: t.invalidBody, color: "var(--danger)", icon: "alert" },
+    fetch_failed:{ title: t.fetchFailedTitle, body: t.fetchFailedBody, color: "var(--danger)", icon: "alert" },
   };
   const c = map[kind];
   const icons = {
@@ -382,12 +382,6 @@ function Recent({ list, t, onReload, onClear }) {
 
 /* ───────────────────────── search bar ───────────────────────── */
 
-const DEMOS = [
-  { key: "demoCarousel", url: "https://www.instagram.com/p/DemoCarousel7x/" },
-  { key: "demoReel", url: "https://www.instagram.com/reel/DemoReel42v/" },
-  { key: "demoPrivate", url: "https://www.instagram.com/p/PrivateLockd9/" },
-  { key: "demoInvalid", url: "instagram.com/oops" },
-];
 
 function SearchBar({ value, setValue, onSubmit, busy, t }) {
   const [focus, setFocus] = useState(false);
@@ -512,20 +506,6 @@ function App() {
           {/* search */}
           <div style={{ maxWidth: 600, margin: "0 auto" }}>
             <SearchBar value={value} setValue={setValue} onSubmit={run} busy={status === "loading"} t={t} />
-            {/* demo chips */}
-            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 14, justifyContent: "center" }}>
-              <span style={{ fontSize: 12.5, color: "var(--faint)", fontWeight: 500 }}>{t.tryDemo}</span>
-              {DEMOS.map((d) => (
-                <button key={d.key} onClick={() => run(d.url)} style={{
-                  border: "1px solid var(--border)", cursor: "pointer", padding: "5px 11px", borderRadius: 99,
-                  fontSize: 12, fontWeight: 500, color: "var(--muted)", background: "var(--bg-2)",
-                  transition: "all .2s var(--ease)",
-                }}
-                  onMouseEnter={(e) => { e.currentTarget.style.color = "var(--accent-bright)"; e.currentTarget.style.borderColor = "var(--accent)"; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.color = "var(--muted)"; e.currentTarget.style.borderColor = "var(--border)"; }}
-                >{t[d.key]}</button>
-              ))}
-            </div>
           </div>
 
           {/* result area */}
