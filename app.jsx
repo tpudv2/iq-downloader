@@ -3,21 +3,12 @@ const S = window.STRINGS;
 
 /* ───────────────────────── helpers ───────────────────────── */
 
-// deterministic hash from string
+// deterministic hash from string (kept for avatar gradients)
 function hashStr(s) {
   let h = 2166136261;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
   return Math.abs(h);
 }
-
-const SAMPLE_NAMES = [
-  ["maya.travels", "Maya Ortega"],
-  ["studio.kioko", "Kioko Studio"],
-  ["the.daily.brew", "Daily Brew"],
-  ["alpine.frames", "Alpine Frames"],
-  ["nova.fitness", "Nova Fitness"],
-  ["bloom.botanics", "Bloom Botanics"],
-];
 
 // Build a deterministic two-color gradient from a seed
 function gradientFor(seed) {
@@ -29,98 +20,26 @@ function gradientFor(seed) {
   return { c1, c2, angle: (h % 4) * 45 + 25 };
 }
 
-function parseUrl(raw) {
-  const url = (raw || "").trim();
-  if (!url) return { error: "invalid" };
-  const lc = url.toLowerCase();
-  const isIg = /instagram\.com\/(p|reel|reels|tv)\/[a-z0-9_\-]+/i.test(lc);
-  if (!isIg) return { error: "invalid" };
-  if (lc.includes("private") || lc.includes("priv")) {
-    const seed = hashStr(url);
-    const [username, fullName] = SAMPLE_NAMES[seed % SAMPLE_NAMES.length];
-    return { error: "private", account: { username: "locked.account", fullName: "Locked Account" } };
-  }
-
-  const isVideo = /\/(reel|reels|tv)\//i.test(lc);
-  const seed = hashStr(url);
-  const [username, fullName] = SAMPLE_NAMES[seed % SAMPLE_NAMES.length];
-
-  let items = [];
-  if (isVideo) {
-    const dur = 8 + (seed % 50);
-    items = [{
-      id: seed + "-v",
-      kind: "video",
-      seed: url + "-v",
-      w: 1080, h: 1920,
-      duration: `0:${String(dur).padStart(2, "0")}`,
-    }];
-  } else {
-    // single image or carousel (2–7)
-    const isCarousel = lc.includes("carousel") || seed % 3 !== 0;
-    const count = isCarousel ? 2 + (seed % 6) : 1;
-    for (let i = 0; i < count; i++) {
-      const isVid = isCarousel && i > 0 && (hashStr(url + i) % 5 === 0);
-      items.push({
-        id: `${seed}-${i}`,
-        kind: isVid ? "video" : "image",
-        seed: url + "-" + i,
-        w: 1080, h: 1080,
-        duration: isVid ? `0:${String(6 + (hashStr(url + i) % 30)).padStart(2, "0")}` : null,
-      });
-    }
-  }
-
-  if (items.length === 0) return { error: "empty" };
-
-  return {
-    error: null,
-    post: {
-      url,
-      type: isVideo ? "video" : (items.length > 1 ? "carousel" : "image"),
-      account: { username, fullName, avatarSeed: username },
-      items,
-    },
-  };
+async function fetchPost(url) {
+  const res = await fetch("/api/fetch", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) throw new Error("server_error");
+  return res.json();
 }
 
-// Draw a media tile to canvas and trigger a PNG download
-function downloadItem(item, account, idx, t) {
-  const { w, h, seed } = item;
-  const canvas = document.createElement("canvas");
-  canvas.width = w; canvas.height = h;
-  const ctx = canvas.getContext("2d");
-  const g = gradientFor(seed);
-  // approximate the oklch gradient with hsl for canvas
-  const hh = hashStr(seed);
-  const hue1 = hh % 360, hue2 = (hue1 + 40 + (hh % 60)) % 360;
-  const grad = ctx.createLinearGradient(0, 0, w, h);
-  grad.addColorStop(0, `hsl(${hue1} 62% 55%)`);
-  grad.addColorStop(1, `hsl(${hue2} 55% 40%)`);
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, w, h);
-  // subtle diagonal texture
-  ctx.globalAlpha = 0.06;
-  ctx.strokeStyle = "#fff";
-  ctx.lineWidth = 2;
-  for (let x = -h; x < w; x += 46) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x + h, h); ctx.stroke(); }
-  ctx.globalAlpha = 1;
-  // label
-  ctx.fillStyle = "rgba(255,255,255,0.92)";
-  ctx.font = `600 ${Math.round(w * 0.05)}px 'Space Grotesk', sans-serif`;
-  ctx.fillText(`@${account.username}`, w * 0.07, h * 0.12);
-  ctx.font = `500 ${Math.round(w * 0.034)}px 'IBM Plex Mono', monospace`;
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.fillText(`${item.kind === "video" ? t.video : t.photo} · ${idx + 1}`, w * 0.07, h * 0.93);
-  ctx.fillText("snaggr · demo", w * 0.07, h * 0.97);
-
-  canvas.toBlob((blob) => {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `snaggr_${account.username}_${String(idx + 1).padStart(2, "0")}.png`;
-    document.body.appendChild(a); a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-  }, "image/png");
+function downloadItem(item, account, idx) {
+  const ext = item.kind === "video" ? "mp4" : "jpg";
+  const filename = `snaggr_${account.username}_${String(idx + 1).padStart(2, "0")}.${ext}`;
+  const proxyUrl = `/api/download?url=${encodeURIComponent(item.url)}&filename=${encodeURIComponent(filename)}`;
+  const a = document.createElement("a");
+  a.href = proxyUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => a.remove(), 1000);
 }
 
 /* ───────────────────────── small UI bits ───────────────────────── */
@@ -201,12 +120,12 @@ function AdSlot({ kind, t }) {
 
 function MediaTile({ item, account, idx, t, delay }) {
   const [saved, setSaved] = useState(false);
-  const g = gradientFor(item.seed);
+  const g = gradientFor(account.username + idx);
   const isVideo = item.kind === "video";
   const aspect = isVideo ? "9 / 16" : "1 / 1";
 
   const onSave = () => {
-    downloadItem(item, account, idx, t);
+    downloadItem(item, account, idx);
     setSaved(true);
     setTimeout(() => setSaved(false), 1800);
   };
@@ -225,8 +144,10 @@ function MediaTile({ item, account, idx, t, delay }) {
         background: `linear-gradient(${g.angle}deg, ${g.c1}, ${g.c2})`,
         position: "relative",
       }}>
-        {/* texture */}
-        <div style={{ position: "absolute", inset: 0, opacity: 0.07, backgroundImage: "repeating-linear-gradient(135deg, transparent 0 22px, white 22px 23px)" }} />
+        {/* real thumbnail */}
+        {item.thumbnail && (
+          <img src={item.thumbnail} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }} />
+        )}
         {/* type badge */}
         <div style={{
           position: "absolute", top: 9, right: 9, display: "flex", alignItems: "center", gap: 5,
@@ -311,9 +232,10 @@ function Loading({ t, phase }) {
 
 function ErrorCard({ kind, t, onReset, account }) {
   const map = {
-    private: { title: t.privateTitle, body: t.privateBody, color: "var(--warn)", icon: "lock" },
-    invalid: { title: t.invalidTitle, body: t.invalidBody, color: "var(--danger)", icon: "alert" },
-    empty:   { title: t.emptyTitle, body: t.emptyBody, color: "var(--faint)", icon: "empty" },
+    private:     { title: t.privateTitle, body: t.privateBody, color: "var(--warn)", icon: "lock" },
+    invalid:     { title: t.invalidTitle, body: t.invalidBody, color: "var(--danger)", icon: "alert" },
+    empty:       { title: t.emptyTitle, body: t.emptyBody, color: "var(--faint)", icon: "empty" },
+    fetch_failed:{ title: t.invalidTitle, body: t.invalidBody, color: "var(--danger)", icon: "alert" },
   };
   const c = map[kind];
   const icons = {
@@ -358,7 +280,7 @@ function ErrorCard({ kind, t, onReset, account }) {
 
 function Results({ post, t }) {
   const downloadAll = () => {
-    post.items.forEach((it, i) => setTimeout(() => downloadItem(it, post.account, i, t), i * 350));
+    post.items.forEach((it, i) => setTimeout(() => downloadItem(it, post.account, i), i * 350));
   };
   return (
     <div style={{ animation: "floatIn .5s var(--ease) both" }}>
@@ -526,7 +448,7 @@ function App() {
   useEffect(() => { sessionStorage.setItem("snaggr_lang", lang); }, [lang]);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const run = useCallback((rawUrl) => {
+  const run = useCallback(async (rawUrl) => {
     const url = (rawUrl ?? value).trim();
     setValue(url);
     timers.current.forEach(clearTimeout);
@@ -535,22 +457,22 @@ function App() {
     setPhase(t.analyzing);
     setResult(null);
 
-    timers.current.push(setTimeout(() => setPhase(t.fetching), 850));
-    timers.current.push(setTimeout(() => {
-      const parsed = parseUrl(url);
-      if (parsed.error) {
-        setResult({ error: parsed.error, account: parsed.account });
+    timers.current.push(setTimeout(() => setPhase(t.fetching), 900));
+
+    try {
+      const data = await fetchPost(url);
+      if (data.error) {
+        setResult({ error: data.error, account: data.account });
         setStatus("error");
       } else {
-        setResult({ post: parsed.post });
+        setResult({ post: data.post });
         setStatus("results");
-        // push to recent
         const entry = {
-          url: parsed.post.url,
-          username: parsed.post.account.username,
-          type: parsed.post.type,
-          count: parsed.post.items.length,
-          seed: parsed.post.account.username,
+          url: data.post.url,
+          username: data.post.account.username,
+          type: data.post.type,
+          count: data.post.items.length,
+          seed: data.post.account.username,
         };
         setRecent((prev) => {
           const next = [entry, ...prev.filter((p) => p.url !== entry.url)].slice(0, 8);
@@ -558,7 +480,13 @@ function App() {
           return next;
         });
       }
-    }, 1750));
+    } catch {
+      setResult({ error: "fetch_failed" });
+      setStatus("error");
+    } finally {
+      timers.current.forEach(clearTimeout);
+      timers.current = [];
+    }
   }, [value, t]);
 
   const reset = () => { setStatus("idle"); setResult(null); setValue(""); };

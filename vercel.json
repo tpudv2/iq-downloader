@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/fetch.js": { "maxDuration": 30 },
+    "api/download.js": { "maxDuration": 30 }
+  },
+  "rewrites": [
+    { "source": "/api/fetch", "destination": "/api/fetch" },
+    { "source": "/api/download", "destination": "/api/download" }
+  ]
+}
